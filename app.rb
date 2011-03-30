@@ -4,6 +4,7 @@ require "json"
 require "net/https"
 require "uri"
 require "logger"
+require "thread"
 
 consumer = OAuth::Consumer.new(
   "Q0iCmmhk1VjkWyUc88AA",
@@ -15,7 +16,7 @@ system "touch '#{File.dirname(__FILE__)}/app.log'" unless File.exist?(File.dirna
 @logger = Logger.new(File.dirname(__FILE__)+'/app.log')
 
 begin
-  token,secret = YAML.load_file(File.dirname(__FILE__)+'/config.yaml')
+  token,secret,wait = YAML.load_file(File.dirname(__FILE__)+'/config.yaml')
 rescue
   request_token = consumer.get_request_token  
   puts "Access this URL and approve => #{request_token.authorize_url}"
@@ -26,8 +27,12 @@ rescue
   )
   puts "Access token: #{access_token.token}"
   puts "Access token secret: #{access_token.secret}"
-  YAML.dump([access_token.token, access_token.secret], open(File.dirname(__FILE__)+'/config.yaml', 'w'))
-  puts "Access token Saved"
+  
+  print "How many seconds to wait before deleting tweet?: "
+  wait = gets.chomp.strip.to_i
+
+  YAML.dump([access_token.token, access_token.secret, wait], open(File.dirname(__FILE__)+'/config.yaml', 'w'))
+  puts "Access Token & Config Saved"
   token,secret = [access_token.token, access_token.secret]
 end
 
@@ -37,13 +42,16 @@ access_token = OAuth::AccessToken.new(
   secret
 )
 
-def delete id, access_token
-  r = JSON.parse(access_token.post("/statuses/destroy/#{id}.json").body)
-  unless r["error"]
-    text = r["text"]
-    id = r["id"]
-    username = r["user"]["screen_name"]
-    @logger.debug "Deleted: @#{username} #{text} - http://twitter.com/#{username}/status/#{id}"
+def delete id, access_token, wait
+  Thread.start do
+    sleep wait
+    r = JSON.parse(access_token.post("/statuses/destroy/#{id}.json").body)
+    unless r["error"]
+      text = r["text"]
+      id = r["id"]
+      username = r["user"]["screen_name"]
+      @logger.debug "Deleted: @#{username} #{text} - http://twitter.com/#{username}/status/#{id}"
+    end
   end
 end
 
@@ -58,9 +66,9 @@ s.start do |h|
     r.read_body do |b|
       data = JSON.parse(b) rescue next
       if data["event"] == 'favorite'
-        delete(data["target_object"]["id"], access_token)
+        delete(data["target_object"]["id"], access_token, wait)
       elsif data["retweeted_status"]
-        delete(data["retweeted_status"]["id"], access_token)
+        delete(data["retweeted_status"]["id"], access_token, wait)
       end
     end
   end
