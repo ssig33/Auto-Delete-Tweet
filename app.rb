@@ -20,8 +20,11 @@ consumer = OAuth::Consumer.new(
 system "touch '#{File.dirname(__FILE__)}/app.log'" unless File.exist?(File.dirname(__FILE__)+'/app.log')
 @logger = Logger.new(File.dirname(__FILE__)+'/app.log')
 
+@store = {}
+
 begin
-  token,secret,wait = YAML.load_file(File.dirname(__FILE__)+'/config.yaml')
+  token,secret,wait,@limit = YAML.load_file(File.dirname(__FILE__)+'/config.yaml')
+  raise if token == nil or secret == nil or wait == nil or @limit == nil
 rescue
   request_token = consumer.get_request_token  
   puts "Access this URL and approve => #{request_token.authorize_url}"
@@ -36,7 +39,10 @@ rescue
   print "How many seconds to wait before deleting tweet?: "
   wait = gets.chomp.strip.to_i
 
-  YAML.dump([access_token.token, access_token.secret, wait], open(File.dirname(__FILE__)+'/config.yaml', 'w'))
+  print "What is your threshold for remove tweet?: "
+  @limit = gets.chomp.strip.to_i
+
+  YAML.dump([access_token.token, access_token.secret, wait, @limit], open(File.dirname(__FILE__)+'/config.yaml', 'w'))
   puts "Access Token & Config Saved"
   token,secret = [access_token.token, access_token.secret]
 end
@@ -48,14 +54,18 @@ access_token = OAuth::AccessToken.new(
 )
 
 def delete id, access_token, wait
-  Thread.start do
-    sleep wait
-    r = JSON.parse(access_token.post("/statuses/destroy/#{id}.json").body)
-    unless r["error"]
-      text = r["text"]
-      id = r["id"]
-      username = r["user"]["screen_name"]
-      @logger.debug "Deleted: @#{username} #{text} - http://twitter.com/#{username}/status/#{id}"
+  @store[id.to_s] = 0 unless @store[id.to_s]
+  @store[id.to_s] += 1
+  if @store[id.to_s] >= @limit
+    Thread.start do
+      sleep wait
+      r = JSON.parse(access_token.post("/statuses/destroy/#{id}.json").body)
+      unless r["error"]
+        text = r["text"]
+        id = r["id"]
+        username = r["user"]["screen_name"]
+        @logger.debug "Deleted: @#{username} #{text} - http://twitter.com/#{username}/status/#{id}"
+      end
     end
   end
 end
