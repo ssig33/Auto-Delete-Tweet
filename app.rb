@@ -1,10 +1,15 @@
-require "oauth"
-require "yaml"
-require "json"
-require "net/https"
-require "uri"
-require "logger"
-require "thread"
+begin
+  require "oauth"
+  require "yaml"
+  require "json"
+  require "net/https"
+  require "uri"
+  require "logger"
+  require "thread"
+rescue LoadError
+  require "rubygems"
+  retry
+end
 
 consumer = OAuth::Consumer.new(
   "Q0iCmmhk1VjkWyUc88AA",
